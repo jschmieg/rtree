@@ -10,34 +10,27 @@
 #include <cmath>
 #include <climits>
 
+#include "TreePreallocate.hpp"
+
+
+
 using namespace std;
 
-//Number of keys slots inside Node (not key bits)
-#define LEVEL_SIZE 4
-// Number of key bits
-#define KEY_SIZE 24
+
+#define LAYOUT "rtree"
 
 int level_bits = log2(LEVEL_SIZE);
 int tree_heigh = KEY_SIZE/level_bits;
 
-struct Node {
-	struct Node * children[LEVEL_SIZE];
-	bool isEnd;
-	int depth;
-	int* values;		//only for leaves
-	Node (bool _isEnd, int _depth)
-	{
-		isEnd = _isEnd;
-		depth = _depth;
-		if(isEnd)
-		{
-			values = new int[LEVEL_SIZE];
-		}
-	}
-};
+
+Tree::Tree()
+{
+
+		//treeRoot = _pm_pool.get_root()->treeRoot;
+}
 
 
-void allocateLevel(Node * current, int depth, int * count) {
+void Tree::allocateLevel(persistent_ptr<Node> current, int depth, int * count) {
 	int i;
 	depth++;
 	//std::cout << "depth=" << depth <<std::endl;
@@ -56,7 +49,7 @@ void allocateLevel(Node * current, int depth, int * count) {
 			(*count)++;
 		}
 
-		current->children[i] = new Node(isLast,depth);
+		current->children[i] = make_persistent<Node>(isLast,depth);
 
 		if(depth<tree_heigh)
 		{
@@ -67,7 +60,7 @@ void allocateLevel(Node * current, int depth, int * count) {
 	}
 }
 
-int * findValueInNode(Node * current, int key) {
+int * Tree::findValueInNode(persistent_ptr<Node> current, int key) {
 
 	std::cout << "current->depth = "<< current->depth << " tree_heigh="<<tree_heigh << std::endl;
 
@@ -85,16 +78,53 @@ int * findValueInNode(Node * current, int key) {
 }
 
 int main() {
-	struct Node *root = new Node(false, 0);
-	int count = 0;
-	allocateLevel(root,root->depth, &count);
+
+	const char *path = "/mnt/pmem/test.pm";
+			//pmem::obj::pool<struct root> pop;
+			//persistent_ptr<Node> root;
+	pool<Tree> _pm_pool;
+	persistent_ptr<Node> treeRoot;
+	if (!boost::filesystem::exists(path)) {
+			std::cout << "Creating pool " << std::endl;
+			try {
+				_pm_pool = pool<Tree>::create(
+				path, LAYOUT, 10*PMEMOBJ_MIN_POOL, S_IWUSR | S_IRUSR);
+			} catch (pmem::pool_error &pe) {std::cout << "Error on create" << pe.what();}
+			try {
+				transaction::exec_tx(_pm_pool, [&] {
+					//tree = new Tree();
+					treeRoot = make_persistent<Node>(false, 0);
+					_pm_pool.get_root()->treeRoot = treeRoot;
+					int count = 0;
+					_pm_pool.get_root()->allocateLevel(treeRoot, treeRoot->depth, &count);
+				});
+			} catch (std::exception &e) {
+				std::cout << "Error " << e.what();
+			}
+
+		}
+		else
+		{
+			std::cout << "Opening existing pool " << std::endl;
+			_pm_pool = pool<Tree>::open(path, LAYOUT);
+		}
+
+	Tree * tree = _pm_pool.get_root().get();
+
+	//tree->treeRoot = tree->_pm_pool.get_root();
 
 	int* value;
-	value = findValueInNode(root, 45678);
+	value = tree->findValueInNode(tree->treeRoot, 45678);
 	std::cout << "value = "<< *value << std::endl;
 	*value = 33333;
-	value = findValueInNode(root, 45678);
+	value = tree->findValueInNode(tree->treeRoot, 45678);
 	std::cout << "value = "<< *value << std::endl;
+	//*value = 45678;
+	try{
+		_pm_pool.close();
+	}catch(std::exception &e) {
+		std::cout << "Error on close" << e.what();
+	}
 
 	return 0;
 }
