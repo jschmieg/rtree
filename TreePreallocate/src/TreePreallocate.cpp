@@ -88,7 +88,7 @@ int main() {
 			std::cout << "Creating pool " << std::endl;
 			try {
 				_pm_pool = pool<Tree>::create(
-				path, LAYOUT, 10*PMEMOBJ_MIN_POOL, S_IWUSR | S_IRUSR);
+				path, LAYOUT, 800*PMEMOBJ_MIN_POOL, S_IWUSR | S_IRUSR);
 			} catch (pmem::pool_error &pe) {std::cout << "Error on create" << pe.what();}
 			try {
 				transaction::exec_tx(_pm_pool, [&] {
@@ -113,7 +113,7 @@ int main() {
 
 	//tree->treeRoot = tree->_pm_pool.get_root();
 
-	int* value;
+	persistent_ptr<int> value;
 	value = tree->findValueInNode(tree->treeRoot, 45678);
 	std::cout << "value = "<< *value << std::endl;
 	*value = 33333;
